@@ -1,11 +1,11 @@
 {
   "enabled": true,
-  "url": "http://localhost:WS4KP_PORT/?latLonQuery=Quebec&latLon=%7B%22lat%22%3A46.813878%2C%22lon%22%3A-71.207981%7D&kiosk=true",
+  "url": "http://localhost:WS4KP_PORT/?latLonQuery=Montreal&latLon=%7B%22lat%22%3A45.5017%2C%22lon%22%3A-73.5673%7D&kiosk=true",
   "fps": 15,
   "width": 1280,
   "height": 720,
   "audioEnabled": true,
-  "ffmpegVideoCodec": "libx264",
+  "ffmpegVideoCodec": "nvenc",
   "ffmpegPreset": "ultrafast",
   "ffmpegPath": "ffmpeg",
   "jpegQuality": 40,
