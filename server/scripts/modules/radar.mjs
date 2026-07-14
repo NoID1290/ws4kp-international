@@ -14,9 +14,11 @@ import ConversionHelpers from './utils/conversionHelpers.mjs';
 import ExperimentalFeatures from './utils/experimental.mjs';
 import RadarBoundsCities from './utils/radar-bounds-cities.mjs';
 import RadarUtils from './utils/radar-utils.mjs';
+import { GEOMET_WMS_URL, RADAR_LAYER, getRadarTimesteps } from './utils/eccc-radar.mjs';
 
 class Radar extends WeatherDisplay {
-	static radarSource = 'https://api.rainviewer.com/public/weather-maps.json';
+	// ECCC GeoMet WMS — replaces RainViewer
+	static radarSource = GEOMET_WMS_URL;
 
 	static tileSource = 'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}';
 
@@ -41,17 +43,8 @@ class Radar extends WeatherDisplay {
 		this.radarData = {};
 		this.locationMarker = null;
 
-		this.radarOptions = {
-			kind: 'radar',
-			tileSize: 256,
-			colorScheme: 4,
-			smoothData: 1,
-			snowColors: 1,
-			extension: 'webp',
-		};
-
 		// Set max images - this will be updated when we get actual data
-		this.dopplerRadarImageMax = 6;
+		this.dopplerRadarImageMax = 12;
 
 		// Update timing for animation
 		this.timing.baseDelay = 500; // 500ms per frame
@@ -216,20 +209,26 @@ class Radar extends WeatherDisplay {
 	addLayer(frame) {
 		if (!frame) return null;
 
-		const tileUrl = `${this.radarData.host}${frame.path}/${this.radarOptions.tileSize}/{z}/{x}/{y}/${this.radarOptions.colorScheme}/${this.radarOptions.smoothData}_${this.radarOptions.snowColors}.${this.radarOptions.extension}`;
-
-		// Check if layer already exists
-		const existingLayer = this.radarLayers.find((layer) => layer._url && layer._url.includes(frame.path));
+		// Check if layer already exists for this timestamp
+		const existingLayer = this.radarLayers.find((layer) => layer.ecccTimestamp === frame.timestamp);
 
 		if (existingLayer) {
 			return existingLayer;
 		}
 
-		const source = new window.L.TileLayer(tileUrl, {
-			tileSize: this.radarOptions.tileSize,
+		// Create ECCC WMS tile layer for this timestep
+		const source = window.L.tileLayer.wms(GEOMET_WMS_URL, {
+			layers: RADAR_LAYER,
+			format: 'image/png',
+			transparent: true,
+			version: '1.3.0',
+			crs: window.L.CRS.EPSG3857,
+			time: frame.timestamp,
 			opacity: 0, // Start invisible
-			zIndex: frame.time,
 		});
+
+		// Store the timestamp on the layer for identification
+		source.ecccTimestamp = frame.timestamp;
 
 		// Add event handlers for tile loading
 		source.on('loading', () => {
@@ -241,7 +240,7 @@ class Radar extends WeatherDisplay {
 		});
 
 		source.on('tileerror', (e) => {
-			console.warn('Tile failed to load:', e);
+			console.warn('ECCC Radar tile failed to load:', e);
 			this.loadedTilesCount++; // Count failed tiles as "loaded" to prevent infinite waiting
 		});
 
@@ -265,7 +264,7 @@ class Radar extends WeatherDisplay {
 		const nextFrame = this.mapFrames[position];
 
 		// Find or create the layer for the next frame
-		let nextLayer = this.radarLayers.find((layer) => layer._url && layer._url.includes(nextFrame.path));
+		let nextLayer = this.radarLayers.find((layer) => layer.ecccTimestamp === nextFrame.timestamp);
 
 		if (!nextLayer) {
 			nextLayer = this.addLayer(nextFrame);
@@ -306,9 +305,10 @@ class Radar extends WeatherDisplay {
 
 	updateTimestamp(frame) {
 		const timeElem = this.elem.querySelector('.time');
-		if (timeElem && frame.time) {
-			const frameTime = DateTime.fromSeconds(frame.time).setZone(this.weatherParameters.timeZone);
-			const pastOrForecast = frame.time > Date.now() / 1000 ? 'FORECAST' : 'PAST';
+		if (timeElem && frame.timestamp) {
+			const frameTime = DateTime.fromISO(frame.timestamp).setZone(this.weatherParameters.timeZone);
+			const frameUnix = new Date(frame.timestamp).getTime() / 1000;
+			const pastOrForecast = frameUnix > Date.now() / 1000 ? 'PRÉVISION' : 'PASSÉ';
 			const timeString = frameTime.toLocaleString(DateTime.TIME_SIMPLE);
 			timeElem.innerHTML = `${pastOrForecast}: ${timeString}`;
 		}
@@ -328,15 +328,17 @@ class Radar extends WeatherDisplay {
 
 	static async getRadarData() {
 		try {
-			const response = await fetch(Radar.radarSource);
-			return await response.json();
+			// Get available timesteps from ECCC GeoMet WMS
+			const timesteps = await getRadarTimesteps();
+			console.log(`ECCC Radar: Got ${timesteps.length} timesteps`);
+			return { timesteps };
 		} catch (error) {
-			console.error('Failed to fetch radar data:', error);
+			console.error('Failed to fetch ECCC radar data:', error);
 			throw error;
 		}
 	}
 
-	async initializeRadar(api, kind = 'radar') {
+	async initializeRadar(api) {
 		// Clear existing layers
 		if (window._leafletMap && Array.isArray(this.radarLayers)) {
 			this.radarLayers.forEach((layer) => {
@@ -353,24 +355,19 @@ class Radar extends WeatherDisplay {
 		this.loadingTilesCount = 0;
 		this.loadedTilesCount = 0;
 
-		if (!api) return;
+		if (!api || !api.timesteps || !api.timesteps.length) return;
 
-		if (kind === 'satellite' && api.satellite && api.satellite.infrared) {
-			this.mapFrames = api.satellite.infrared;
-			this.lastPastFramePosition = api.satellite.infrared.length - 1;
-		} else if (api.radar && api.radar.past) {
-			this.mapFrames = Array(Radar.radarIterationCount).fill(api.radar.past).flat();
-			if (api.radar.nowcast) {
-				this.mapFrames = this.mapFrames.concat(api.radar.nowcast);
-			}
-			this.lastPastFramePosition = api.radar.past.length - 1;
-		}
+		// Build frames from ECCC timesteps
+		// Repeat past frames for animation effect (like original RainViewer logic)
+		const pastFrames = api.timesteps.map((timestamp) => ({ timestamp }));
+		this.mapFrames = Array(Radar.radarIterationCount).fill(pastFrames).flat();
+		this.lastPastFramePosition = pastFrames.length - 1;
 
 		// Update timing based on actual frame count
 		this.timing.totalScreens = this.mapFrames.length;
 		this.calcNavTiming();
 
-		// Show initial frame
+		// Show initial frame (last past frame)
 		if (this.mapFrames.length > 0) {
 			this.showFrame(this.lastPastFramePosition, true);
 		}
@@ -388,14 +385,12 @@ class Radar extends WeatherDisplay {
 			// Do this so the map isn't cluttered around origin location
 			const filteredCities = cities.filter((city) => {
 				const distance = haversineDistance(this.weatherParameters.latitude, this.weatherParameters.longitude, parseFloat(city.lat), parseFloat(city.lon));
-				return distance >= Radar.defaultCityDistance + Radar.additionalLocationBufferDistance;	// distance away from the main city
+				return distance >= Radar.defaultCityDistance + Radar.additionalLocationBufferDistance;
 			});
 
 			filteredCities.forEach(async (cityData) => {
-				// Check if this city is not the main city and not within 30km of any other city in filteredCities
 				if (
 					cityData.city !== this.weatherParameters.city
-					// this is a distance check to again avoid cluttering the map with too many markers
 					&& !filteredCities.some(
 						(other) => other !== cityData
 							&& haversineDistance(
@@ -403,7 +398,7 @@ class Radar extends WeatherDisplay {
 								parseFloat(cityData.lon),
 								parseFloat(other.lat),
 								parseFloat(other.lon),
-							) < Radar.defaultCityDistance,	// distance away from any other city in the filtered list
+							) < Radar.defaultCityDistance,
 					)
 				) {
 					const lat = parseFloat(cityData.lat);
@@ -423,7 +418,7 @@ class Radar extends WeatherDisplay {
 					let latlng = window.L.latLng(lat, lon);
 					const overlapArea = RadarUtils.getMaxOverlapWithMarkers(latlng);
 
-					if (overlapArea > 0.3) {	// 30%
+					if (overlapArea > 0.3) {
 						latlng = RadarUtils.jitterAwayFromOverlaps(latlng);
 					}
 
@@ -434,7 +429,7 @@ class Radar extends WeatherDisplay {
 							iconSize: [140, 120],
 							iconAnchor: [50, 10],
 						}),
-						interactive: false, // Makes sure the label doesn't block clicks
+						interactive: false,
 					});
 
 					label.addTo(window._leafletMap);
@@ -483,9 +478,9 @@ class Radar extends WeatherDisplay {
 				window._leafletMap.setView([weatherParameters.latitude, weatherParameters.longitude], leafletDefaultZoom);
 			}
 
-			// Get radar data
+			// Get radar data from ECCC GeoMet WMS
 			this.radarData = await Radar.getRadarData();
-			await this.initializeRadar(this.radarData, 'radar');
+			await this.initializeRadar(this.radarData);
 
 			const todayKey = DateTime.now().setZone(weatherParameters.timeZone).toFormat('yyyy-MM-dd');
 

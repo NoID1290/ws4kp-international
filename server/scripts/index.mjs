@@ -66,6 +66,9 @@ const init = () => {
 			f: 'json',
 			category,
 			maxSuggestions: 10,
+			countryCode: 'CAN',
+			// Quebec bounding box (lon_min, lat_min, lon_max, lat_max)
+			searchExtent: '-79.8,44.9,-57.1,62.6',
 		},
 		dataType: 'json',
 		transformResult: (response) => ({
@@ -76,7 +79,7 @@ const init = () => {
 		}),
 		minChars: 3,
 		showNoSuggestionNotice: true,
-		noSuggestionNotice: 'No results found. Please try a different search string.',
+		noSuggestionNotice: 'Aucun résultat. Veuillez essayer une autre recherche (Québec seulement).',
 		onSelect(suggestion) { autocompleteOnSelect(suggestion, this); },
 		width: 490,
 	});

@@ -1,19 +1,24 @@
-// hourly forecast list
+// Weather Alerts — Environment Canada (ECCC) CAP-CP + Alert Ready
 
 import STATUS from './status.mjs';
-import { json } from './utils/fetch.mjs';
 import WeatherDisplay from './weatherdisplay.mjs';
 import { registerDisplay } from './navigation.mjs';
+import { getAlerts, getSeverityColor } from './utils/eccc-alerts.mjs';
 
 const hazardLevels = {
 	Extreme: 10,
 	Severe: 5,
+	Moderate: 3,
+	Minor: 1,
 };
 
 const hazardModifiers = {
-	'Hurricane Warning': 2,
-	'Tornado Warning': 3,
-	'Severe Thunderstorm Warning': 1,
+	Tornade: 3,
+	Ouragan: 2,
+	'Orage violent': 1,
+	Tornado: 3,
+	Hurricane: 2,
+	'Severe Thunderstorm': 1,
 };
 
 class Hazards extends WeatherDisplay {
@@ -33,28 +38,35 @@ class Hazards extends WeatherDisplay {
 		const alert = this.checkbox.querySelector('.alert');
 		alert.classList.remove('show');
 
-		// try {
-		// 	// get the forecast
-		// 	const url = new URL('https://api.weather.gov/alerts/active');
-		// 	url.searchParams.append('point', `${this.weatherParameters.latitude},${this.weatherParameters.longitude}`);
-		// 	url.searchParams.append('limit', 5);
-		// 	const alerts = await json(url, { retryCount: 3, stillWaiting: () => this.stillWaiting() });
-		// 	const unsortedAlerts = alerts.features ?? [];
-		// 	const hasImmediate = unsortedAlerts.reduce((acc, hazard) => acc || hazard.properties.urgency === 'Immediate', false);
-		// 	const sortedAlerts = unsortedAlerts.sort((a, b) => (calcSeverity(b.properties.severity, b.properties.event)) - (calcSeverity(a.properties.severity, a.properties.event)));
-		// 	const filteredAlerts = sortedAlerts.filter((hazard) => hazard.properties.severity !== 'Unknown' && (!hasImmediate || (hazard.properties.urgency === 'Immediate')));
-		// 	this.data = filteredAlerts;
+		try {
+			// Fetch alerts from ECCC GeoMet OGC API
+			const alertData = await getAlerts(
+				this.weatherParameters.latitude,
+				this.weatherParameters.longitude,
+			);
 
-		// 	// show alert indicator
-		// 	if (this.data.length > 0) alert.classList.add('show');
-		// } catch (error) {
-		// 	console.error('Get hourly forecast failed');
-		// 	console.error(error.status, error.responseJSON);
-		// 	if (this.isEnabled) this.setStatus(STATUS.failed);
-		// 	// return undefined to other subscribers
-		// 	this.getDataCallback(undefined);
-		// 	return;
-		// }
+			const { alerts: unsortedAlerts, hasAlertReady } = alertData;
+
+			// Store Alert Ready status for display
+			this.hasAlertReady = hasAlertReady;
+
+			// Filter out unknown severity and sort
+			const filteredAlerts = unsortedAlerts.filter(
+				(hazard) => hazard.severity.toLowerCase() !== 'unknown',
+			);
+
+			this.data = filteredAlerts;
+
+			// show alert indicator
+			if (this.data.length > 0) alert.classList.add('show');
+		} catch (error) {
+			console.error('ECCC: Get weather alerts failed');
+			console.error(error);
+			if (this.isEnabled) this.setStatus(STATUS.failed);
+			// return undefined to other subscribers
+			this.getDataCallback(undefined);
+			return;
+		}
 
 		this.getDataCallback();
 
@@ -70,10 +82,39 @@ class Hazards extends WeatherDisplay {
 		const list = this.elem.querySelector('.hazard-lines');
 		list.innerHTML = '';
 
+		// Update Alert Ready banner
+		const alertReadyBanner = this.elem.querySelector('.alert-ready-banner');
+		if (alertReadyBanner) {
+			if (this.hasAlertReady) {
+				alertReadyBanner.classList.add('show');
+			} else {
+				alertReadyBanner.classList.remove('show');
+			}
+		}
+
 		const lines = this.data.map((data) => {
 			const fillValues = {};
-			// text
-			fillValues['hazard-text'] = `${data.properties.event}<br/><br/>${data.properties.description.replaceAll('\n\n', '<br/><br/>').replaceAll('\n', ' ')}`;
+			const severity = (data.severity || '').toLowerCase();
+			const severityColor = getSeverityColor(severity);
+			const severityLabel = data.severity.toUpperCase();
+
+			// Build the alert text with severity badge
+			const severityBadge = `<span class="severity-badge" style="background-color: ${severityColor};">${severityLabel}</span>`;
+			const alertReadyTag = data.isAlertReady
+				? '<span class="alert-ready-tag">⚠ ALERTE PRÊTE</span>'
+				: '';
+
+			fillValues['hazard-text'] = `${severityBadge} ${alertReadyTag}`
+				+ `<br/><strong>${data.headline || data.event}</strong>`
+				+ `<br/><br/>${(data.description || '').replace(/\n\n/g, '<br/><br/>').replace(/\n/g, ' ')}`;
+
+			if (data.instruction) {
+				fillValues['hazard-text'] += `<br/><br/><em>${data.instruction}</em>`;
+			}
+
+			if (data.area) {
+				fillValues['hazard-text'] += `<br/><br/><small>Zone: ${data.area}</small>`;
+			}
 
 			return this.fillTemplate('hazard', fillValues);
 		});
@@ -163,4 +204,4 @@ const calcSeverity = (severity, event) => {
 };
 
 // register display
-registerDisplay(new Hazards(0, 'hazards', false));
+registerDisplay(new Hazards(0, 'hazards', true));
