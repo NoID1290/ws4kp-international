@@ -6,15 +6,15 @@ const corsAnywhereKnownSources = [
 
 export default class NearbyCities {
 	static internalConstructWikiCityCodeIdUrl(location) {
-		return `https://en.wikipedia.org/w/api.php?action=query&titles=${location}&prop=pageprops&format=json`;
+		return `/proxy/wikipedia?action=query&titles=${location}&prop=pageprops&format=json`;
 	}
 
 	static internalConstructWikiCountryCodeIdUrl(countryCode) {
-		return `https://www.wikidata.org/wiki/Special:EntityData/${countryCode}.json`;
+		return `/proxy/wikidata-entity/${countryCode}`;
 	}
 
 	static internalConstructNearbyCitiesSparqlUrl(cityCode, countryCode) {
-		const baseUrl = 'https://query.wikidata.org/sparql?query=';
+		const baseUrl = '/proxy/wikidata-sparql?query=';
 
 		const query = `SELECT DISTINCT ?cityLabel ?lat ?lon ?population WHERE {
                 ?city wdt:P31/wdt:P279* wd:Q515.

@@ -6,7 +6,7 @@ const corsAnywhereKnownSources = [
 
 export default class RadarBoundsCities {
 	static internalConstructBoundingBoxQuery(cornerWestLat, cornerWestLng, cornerEastLat, cornerEastLng) {
-		const baseUrl = 'https://query.wikidata.org/sparql?query=';
+		const baseUrl = '/proxy/wikidata-sparql?query=';
 
 		const pointCornerWest = `Point(${cornerWestLat} ${cornerWestLng})`;
 		const pointCornerEast = `Point(${cornerEastLat} ${cornerEastLng})`;
@@ -14,10 +14,10 @@ export default class RadarBoundsCities {
 
 		const query = `
             SELECT ?item ?itemLabel ?coord ?population WHERE {
-            ?item wdt:P31 wd:Q515 .                 # Instance of city
-            ?item wdt:P1082 ?population .           # Population
-            FILTER(?population > 50000)             # Filter for cities with population greater than 50,000
-            ?item wdt:P625 ?coord .                 # Coordinates of the city
+            ?item wdt:P31/wdt:P279* wd:Q515 .
+            ?item wdt:P1082 ?population .
+            FILTER(?population > 50000)
+            ?item wdt:P625 ?coord .
             
             SERVICE wikibase:box {
                 ?item wdt:P625 ?location .

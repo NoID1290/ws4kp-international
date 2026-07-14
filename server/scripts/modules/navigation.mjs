@@ -80,7 +80,7 @@ const getWeather = async (latLon, haveDataCallback) => {
 	if (typeof haveDataCallback === 'function') haveDataCallback(point);
 
 	// Get locality data from open-meteo and local storage
-	const localityName = localStorage.getItem('latLonQuery');
+	let localityName = localStorage.getItem('latLonQuery');
 	const storedLatLon = localStorage.getItem('latLon');
 	let locality;
 
@@ -99,7 +99,8 @@ const getWeather = async (latLon, haveDataCallback) => {
 		if (parsedParameters && parsedParameters.latLonQuery != null) {
 			console.warn(`getWeather: parsed localityName as: ${parsedParameters.latLonQuery}`);
 			// This is only useful if the page is refreshed
-			localStorage.setItem('latLonQuery', parsedParameters.latLonQuery);
+			localityName = parsedParameters.latLonQuery;
+			localStorage.setItem('latLonQuery', localityName);
 			// Pass the value from our query params
 			locality = await getGeocoding(parsedParameters.latLonQuery.split(',')[0]);
 		}

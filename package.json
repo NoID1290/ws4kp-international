@@ -3,12 +3,17 @@
 	"version": "12.1.0",
 	"description": "Welcome to the WeatherStar 4000+ project page!",
 	"main": "index.js",
+	"nodemonConfig": {
+		"ignore": [
+			"server/stream/*"
+		]
+	},
 	"scripts": {
 		"test": "echo \"Error: no test specified\" && exit 1",
 		"build:css": "sass --style=compressed ./server/styles/scss/main.scss ./server/styles/main.css",
 		"lint": "eslint ./server/scripts/**/*.mjs",
 		"lint:fix": "eslint --fix ./server/scripts/**/*.mjs",
-		"start": "nodemon index.js",
+		"start": "nodemon --ignore \"server/stream/**\" --ignore \"docs/**\" --ignore \"server/styles/main.css\" index.js",
 		"copy-assets": "mkdir -p docs/images && cp -r ./server/images docs && mkdir -p docs/fonts && cp -r ./server/fonts docs",
 		"build": "rm -rf docs/ && gulp && npm run copy-assets",
 		"copy-assets:win": "cmd /c \"mkdir docs\\images && xcopy /e /i /y server\\images docs\\images && mkdir docs\\fonts && xcopy /e /i /y server\\fonts docs\\fonts\"",
@@ -52,6 +57,7 @@
 	},
 	"dependencies": {
 		"ejs": "^3.1.5",
-		"express": "^4.20.0"
+		"express": "^4.20.0",
+		"puppeteer": "^25.3.0"
 	}
 }

@@ -1,0 +1,7 @@
+{
+  "ignore": [
+    "server/stream/**",
+    "server/styles/main.css",
+    "docs/**"
+  ]
+}

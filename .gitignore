@@ -2,3 +2,8 @@ node_modules
 **/debug.log
 server/scripts/custom.js
 .DS_Store
+*.m3u8
+*.m3u
+*.ts
+*.tsx
+*.m4s

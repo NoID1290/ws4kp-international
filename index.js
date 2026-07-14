@@ -13,6 +13,10 @@ let RequestValidator;
 // Store WeatherUndergroundPwsMapper when loaded
 let WeatherUndergroundPwsMapper;
 
+// Store Streamer when loaded
+let Streamer;
+
+
 // Load the ES module
 import('./server/scripts/modules/utils/requestValidator.mjs')
 	.then((module) => {
@@ -32,6 +36,17 @@ import('./server/scripts/modules/utils/weatherUndergroundPwsMapper.mjs')
 		process.exit(1);
 	});
 
+import('./server/streamer.mjs')
+	.then((module) => {
+		Streamer = module;
+		if (Streamer && typeof Streamer.startStreamer === 'function') {
+			Streamer.startStreamer(port);
+		}
+	})
+	.catch((err) => {
+		console.error('Failed to load streamer.mjs:', err);
+	});
+
 // template engine
 app.set('view engine', 'ejs');
 
@@ -45,6 +60,17 @@ let latestWeather = null;
 // SSE clients set
 const sseClients = new Set();
 
+// serve generated HLS streams
+app.use('/stream', express.static(path.join(__dirname, './server/stream')));
+
+// IPTV playlist
+app.get('/stream/playlist.m3u', (req, res) => {
+	const host = req.headers.host || `localhost:${port}`;
+	const playlist = `#EXTM3U\n#EXTINF:-1 tvg-id="ws4kp" tvg-name="WeatherStar 4000" group-title="Weather",WeatherStar 4000\nhttp://${host}/stream/index.m3u8\n`;
+	res.setHeader('Content-Type', 'application/x-mpegurl');
+	res.send(playlist);
+});
+
 // version
 const { version } = JSON.parse(fs.readFileSync('package.json'));
 
@@ -56,6 +82,57 @@ const index = (req, res) => {
 		// initialData: JSON.stringify(latestWeather),
 	});
 };
+
+// Proxy for Wikipedia API
+app.get('/proxy/wikipedia', async (req, res) => {
+	try {
+		const targetUrl = `https://en.wikipedia.org/w/api.php?${new URLSearchParams(req.query).toString()}`;
+		const response = await fetch(targetUrl, {
+			headers: { 'User-Agent': 'ws4kp-quebec/1.0 (https://github.com/mwood77/ws4kp-international)' }
+		});
+		const data = await response.json();
+		res.setHeader('Content-Type', 'application/json');
+		res.send(data);
+	} catch (error) {
+		console.error('Wikipedia proxy error:', error);
+		res.status(500).json({ error: error.message });
+	}
+});
+
+// Proxy for Wikidata EntityData
+app.get('/proxy/wikidata-entity/:cityCode', async (req, res) => {
+	try {
+		const targetUrl = `https://www.wikidata.org/wiki/Special:EntityData/${req.params.cityCode}.json`;
+		const response = await fetch(targetUrl, {
+			headers: { 'User-Agent': 'ws4kp-quebec/1.0 (https://github.com/mwood77/ws4kp-international)' }
+		});
+		const data = await response.json();
+		res.setHeader('Content-Type', 'application/json');
+		res.send(data);
+	} catch (error) {
+		console.error('Wikidata entity proxy error:', error);
+		res.status(500).json({ error: error.message });
+	}
+});
+
+// Proxy for Wikidata SPARQL
+app.get('/proxy/wikidata-sparql', async (req, res) => {
+	try {
+		const targetUrl = `https://query.wikidata.org/sparql?${new URLSearchParams(req.query).toString()}`;
+		const response = await fetch(targetUrl, {
+			headers: {
+				Accept: 'application/sparql-results+json',
+				'User-Agent': 'ws4kp-quebec/1.0 (https://github.com/mwood77/ws4kp-international)'
+			}
+		});
+		const data = await response.json();
+		res.setHeader('Content-Type', 'application/json');
+		res.send(data);
+	} catch (error) {
+		console.error('Wikidata SPARQL proxy error:', error);
+		res.status(500).json({ error: error.message });
+	}
+});
 
 // debugging
 if (process.env?.DIST === '1') {
@@ -183,11 +260,29 @@ const server = app.listen(port, () => {
 });
 
 // graceful shutdown
-const gracefulShutdown = () => {
+const gracefulShutdown = async () => {
+	console.log('Graceful shutdown initiated...');
+	// Force exit after 1.5 seconds if shutdown hangs (nodemon timeout is typically 1s)
+	const forceExitTimeout = setTimeout(() => {
+		console.log('Shutdown timed out, forcing exit.');
+		process.exit(0);
+	}, 1500);
+
+	try {
+		if (Streamer && typeof Streamer.stopStreamer === 'function') {
+			await Streamer.stopStreamer();
+		}
+	} catch (err) {
+		console.error('Error stopping streamer:', err);
+	}
+
 	server.close(() => {
 		console.log('Server closed');
+		clearTimeout(forceExitTimeout);
+		process.exit(0);
 	});
 };
 
 process.on('SIGINT', gracefulShutdown);
 process.on('SIGTERM', gracefulShutdown);
+process.on('SIGUSR2', gracefulShutdown); // Handle nodemon restart

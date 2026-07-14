@@ -31,10 +31,12 @@ class LocalForecast extends WeatherDisplay {
 		const conditions = [];
 
 		localForecastTextByDay.forEach((forecast) => {
-			const page = Object.values(forecast.periods).map((forecastText) => ({
-				DayName: forecast.date,
-				Text: forecastText.text,
-			}));
+			const page = Object.values(forecast.periods)
+				.filter(Boolean)
+				.map((forecastText) => ({
+					DayName: forecast.date,
+					Text: forecastText.text,
+				}));
 
 			conditions.push(...page);
 		});
