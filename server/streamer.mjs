@@ -20,12 +20,32 @@ const parseEnvInt = (val) => {
 	return isNaN(parsed) ? undefined : parsed;
 };
 
+const writeToFfmpegStdin = (process, buffer) => new Promise((resolve) => {
+	if (process.stdin.write(buffer)) {
+		resolve();
+	} else {
+		process.stdin.once('drain', resolve);
+	}
+});
+
+	const checkFfmpegEncoder = (codec, ffmpegPath) => {
+		return new Promise((resolve) => {
+			const proc = spawn(ffmpegPath, ['-encoders']);
+		let output = '';
+		proc.stdout.on('data', (data) => { output += data.toString(); });
+		proc.on('close', () => {
+			resolve(output.toLowerCase().includes(codec.toLowerCase()));
+		});
+		proc.on('error', () => resolve(false));
+	});
+};
+
 export async function startStreamer(port) {
 	const configPath = path.resolve('./server/config/stream.json');
 	let config = {
 		enabled: false,
 		url: 'http://localhost:WS4KP_PORT/?kiosk=true',
-		fps: 10,
+		fps: 15,
 		width: 640,
 		height: 480,
 		audioEnabled: true,
@@ -34,7 +54,7 @@ export async function startStreamer(port) {
 		ffmpegPath: 'ffmpeg',
 		jpegQuality: 80,
 		hlsSegmentDuration: 2,
-		hlsListSize: 5
+		hlsListSize: 5,
 	};
 
 	// Read stream.json config if it exists
@@ -57,6 +77,13 @@ export async function startStreamer(port) {
 	config.ffmpegVideoCodec = process.env.STREAM_FFMPEG_VIDEO_CODEC ?? config.ffmpegVideoCodec;
 	config.ffmpegPreset = process.env.STREAM_FFMPEG_PRESET ?? config.ffmpegPreset;
 	config.ffmpegPath = process.env.STREAM_FFMPEG_PATH ?? config.ffmpegPath;
+	config.ffmpegVideoCodec = config.ffmpegVideoCodec.split(',')[0].trim();
+
+	const encoderAvailable = await checkFfmpegEncoder(config.ffmpegVideoCodec, config.ffmpegPath);
+	if (!encoderAvailable) {
+		console.log(`Encoder '${config.ffmpegVideoCodec}' not available in FFmpeg build, falling back to libx264.`);
+		config.ffmpegVideoCodec = 'libx264';
+	}
 
 	if (!config.enabled) {
 		console.log('Background streamer is disabled in configuration.');
@@ -81,7 +108,7 @@ export async function startStreamer(port) {
 				if (file.endsWith('.ts') || file.endsWith('.m3u8')) {
 					try {
 						fs.unlinkSync(path.join(hlsOutputDir, file));
-					} catch (e) {}
+					} catch (e) { }
 				}
 			});
 		} else {
@@ -98,19 +125,19 @@ export async function startStreamer(port) {
 				'--disable-gpu',
 				'--hide-scrollbars',
 				'--mute-audio',
-				'--font-render-hinting=none'
+				'--font-render-hinting=none',
 			],
-			executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
+			executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
 		});
 
 		const page = await browser.newPage();
 		page.on('console', (msg) => console.log(`[PUPPETEER PAGE LOG] ${msg.text()}`));
 		page.on('pageerror', (err) => console.error(`[PUPPETEER PAGE ERROR] ${err.message}`));
 		await page.setViewport({ width: config.width, height: config.height });
-		
+
 		console.log('Opening viewport in headless browser...');
 		await page.goto(resolvedUrl, { waitUntil: 'networkidle2' });
-		
+
 		// Extra wait to let animations settle
 		await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -120,27 +147,43 @@ export async function startStreamer(port) {
 			'-f', 'image2pipe',
 			'-vcodec', 'mjpeg',
 			'-framerate', String(config.fps),
-			'-i', '-'
+			'-i', '-',
 		];
 
 		if (config.audioEnabled) {
 			ffmpegArgs.push(
-				'-f', 'lavfi',
-				'-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-				'-c:a', 'aac',
-				'-shortest'
+				'-f',
+				'lavfi',
+				'-i',
+				'anullsrc=channel_layout=stereo:sample_rate=44100',
+				'-c:a',
+				'aac',
 			);
 		}
 
 		ffmpegArgs.push(
-			'-c:v', config.ffmpegVideoCodec,
-			'-pix_fmt', 'yuv420p',
-			'-preset', config.ffmpegPreset,
-			'-g', String(config.fps * 2), // keyframe every 2 seconds
-			'-hls_time', String(config.hlsSegmentDuration),
-			'-hls_list_size', String(config.hlsListSize),
-			'-hls_flags', 'delete_segments',
-			path.join(hlsOutputDir, 'index.m3u8')
+			'-c:v',
+			config.ffmpegVideoCodec,
+			'-pix_fmt',
+			'yuv420p',
+			'-preset',
+			config.ffmpegPreset,
+		);
+
+		if (config.ffmpegVideoCodec.startsWith('libx264')) {
+			ffmpegArgs.push('-tune', 'zerolatency');
+		}
+
+		ffmpegArgs.push(
+			'-g',
+			String(config.fps * 2),
+			'-hls_time',
+			String(config.hlsSegmentDuration),
+			'-hls_list_size',
+			String(config.hlsListSize),
+			'-hls_flags',
+			'delete_segments',
+			path.join(hlsOutputDir, 'index.m3u8'),
 		);
 
 		console.log('Spawning FFmpeg...');
@@ -148,7 +191,7 @@ export async function startStreamer(port) {
 
 		ffmpegProcess.stderr.on('data', (data) => {
 			// Uncomment for verbose FFmpeg debugging
-			// console.log(`[FFMPEG] ${data}`);
+			// console.log(`[FFMPEG STDERR] ${data}`);
 		});
 
 		ffmpegProcess.on('exit', (code, signal) => {
@@ -168,11 +211,11 @@ export async function startStreamer(port) {
 			try {
 				const buffer = await page.screenshot({
 					type: 'jpeg',
-					quality: config.jpegQuality
+					quality: config.jpegQuality,
 				});
 
 				if (ffmpegProcess && ffmpegProcess.stdin.writable) {
-					ffmpegProcess.stdin.write(buffer);
+					await writeToFfmpegStdin(ffmpegProcess, buffer);
 				}
 			} catch (err) {
 				console.error('Screenshot capture failed:', err.message);
@@ -185,7 +228,6 @@ export async function startStreamer(port) {
 
 		captureLoop();
 		console.log('Background streamer running and encoding to HLS.');
-
 	} catch (err) {
 		console.error('Failed to initialize background streamer:', err);
 		await stopStreamer();
@@ -195,7 +237,7 @@ export async function startStreamer(port) {
 export async function stopStreamer() {
 	console.log('Stopping background streamer...');
 	running = false;
-	
+
 	if (captureTimeout) {
 		clearTimeout(captureTimeout);
 		captureTimeout = null;
@@ -205,23 +247,23 @@ export async function stopStreamer() {
 		try {
 			ffmpegProcess.stdin.end();
 			ffmpegProcess.kill('SIGINT');
-		} catch (e) {}
+		} catch (e) { }
 		ffmpegProcess = null;
 	}
 
 	if (browser) {
 		try {
 			await browser.close();
-		} catch (e) {}
+		} catch (e) { }
 		browser = null;
 	}
-	
+
 	console.log('Background streamer stopped.');
 }
 
 // Global cleanup event listener
 process.on('exit', () => {
 	if (ffmpegProcess) {
-		try { ffmpegProcess.kill('SIGKILL'); } catch (e) {}
+		try { ffmpegProcess.kill('SIGKILL'); } catch (e) { }
 	}
 });

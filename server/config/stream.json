@@ -1,14 +1,14 @@
 {
   "enabled": true,
   "url": "http://localhost:WS4KP_PORT/?latLonQuery=Quebec&latLon=%7B%22lat%22%3A46.813878%2C%22lon%22%3A-71.207981%7D&kiosk=true",
-  "fps": 30,
+  "fps": 15,
   "width": 1280,
   "height": 720,
   "audioEnabled": true,
   "ffmpegVideoCodec": "libx264",
   "ffmpegPreset": "ultrafast",
   "ffmpegPath": "ffmpeg",
-  "jpegQuality": 50,
+  "jpegQuality": 40,
   "hlsSegmentDuration": 2,
   "hlsListSize": 10
 }
