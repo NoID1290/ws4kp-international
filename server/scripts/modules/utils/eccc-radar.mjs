@@ -14,13 +14,13 @@
 const GEOMET_WMS_URL = 'https://geo.weather.gc.ca/geomet';
 
 // Radar layer — 1km composite (rain, snow, mixed)
-const RADAR_LAYER = 'RADAR_1KM_RDBR';
+const RADAR_LAYER = 'Radar_1km_SfcPrecipType';
 
 // Number of past timesteps to request for animation
 const PAST_TIMESTEPS = 12;
 
-// Time between frames in minutes (ECCC radar updates roughly every 6-10 min)
-const FRAME_INTERVAL_MINUTES = 10;
+// Time between frames in minutes (ECCC radar updates roughly every 6 min)
+const FRAME_INTERVAL_MINUTES = 6;
 
 /**
  * Fetches available radar timesteps from ECCC GeoMet WMS GetCapabilities.
@@ -94,7 +94,7 @@ const generateTimestepsFromRange = (startStr, endStr, intervalStr) => {
 
 	// Go backwards from end to get the last N timesteps
 	for (let i = 0; i < PAST_TIMESTEPS && current >= start; i += 1) {
-		timestamps.unshift(current.toISOString());
+		timestamps.unshift(current.toISOString().split('.')[0] + 'Z');
 		current = new Date(current.getTime() - intervalMs);
 	}
 
@@ -114,7 +114,7 @@ const generateFallbackTimesteps = () => {
 	const timestamps = [];
 	for (let i = PAST_TIMESTEPS - 1; i >= 0; i -= 1) {
 		const ts = new Date(now.getTime() - (i * FRAME_INTERVAL_MINUTES * 60 * 1000));
-		timestamps.push(ts.toISOString());
+		timestamps.push(ts.toISOString().split('.')[0] + 'Z');
 	}
 
 	return timestamps;

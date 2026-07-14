@@ -250,8 +250,20 @@ body {
 }
 
 @font-face {
+	font-family: "Fixedsys Excelsior";
+	src: url('../fonts/FSEX302.ttf') format('truetype');
+}
+
+@font-face {
 	font-family: "Star4000";
 	src: url('../fonts/Star4000.woff') format('woff');
+	unicode-range: U+0000-007F;
+}
+
+@font-face {
+	font-family: "Star4000";
+	src: url('../fonts/FSEX302.ttf') format('truetype');
+	unicode-range: U+0080-FFFF;
 }
 
 @font-face {
@@ -262,6 +274,13 @@ body {
 @font-face {
 	font-family: 'Star4000 Extended';
 	src: url('../fonts/Star4000 Extended.woff') format('woff');
+	unicode-range: U+0000-007F;
+}
+
+@font-face {
+	font-family: 'Star4000 Extended';
+	src: url('../fonts/FSEX302.ttf') format('truetype');
+	unicode-range: U+0080-FFFF;
 }
 
 @font-face {
@@ -277,11 +296,25 @@ body {
 @font-face {
 	font-family: 'Star4000 Large';
 	src: url('../fonts/Star4000 Large.ttf') format('truetype');
+	unicode-range: U+0000-007F;
+}
+
+@font-face {
+	font-family: 'Star4000 Large';
+	src: url('../fonts/FSEX302.ttf') format('truetype');
+	unicode-range: U+0080-FFFF;
 }
 
 @font-face {
 	font-family: 'Star4000 Small';
 	src: url('../fonts/Star4000 Small.woff') format('woff');
+	unicode-range: U+0000-007F;
+}
+
+@font-face {
+	font-family: 'Star4000 Small';
+	src: url('../fonts/FSEX302.ttf') format('truetype');
+	unicode-range: U+0080-FFFF;
 }
 
 #display {

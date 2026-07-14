@@ -5,7 +5,7 @@ const path = require('path');
 const express = require('express');
 
 const app = express();
-const port = process.env.WS4KP_PORT ?? 8080;
+const port = process.env.WS4KP_PORT ?? 6969;
 
 // Store RequestValidator when loaded
 let RequestValidator;

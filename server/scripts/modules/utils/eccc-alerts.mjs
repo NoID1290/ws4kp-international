@@ -48,14 +48,20 @@ const SEVERITY_COLORS = {
 
 /**
  * Determines if an alert qualifies as "Alert Ready" level.
- * Alert Ready is for life-threatening or imminent danger alerts.
  */
-const isAlertReady = (alert) => {
-	if (!alert) return false;
-	const severity = (alert.severity || '').toLowerCase();
-	const urgency = (alert.urgency || '').toLowerCase();
-	return (severity === 'extreme' || severity === 'severe')
-		&& (urgency === 'immediate' || urgency === 'expected');
+const isAlertReady = (props) => {
+	const alertType = (props.alert_type || '').toLowerCase();
+	const riskColor = (props.risk_colour_en || '').toLowerCase();
+	return alertType === 'warning' || riskColor === 'red';
+};
+
+const getSeverityValue = (props) => {
+	const color = (props.risk_colour_en || '').toLowerCase();
+	const type = (props.alert_type || '').toLowerCase();
+	if (color === 'red' || type === 'warning') return 'extreme';
+	if (color === 'orange' || type === 'watch') return 'moderate';
+	if (color === 'yellow' || type === 'advisory') return 'minor';
+	return 'minor';
 };
 
 /**
@@ -92,33 +98,34 @@ const getAlerts = async (lat, lon, radius = 1.0) => {
 			return { alerts: [], hasAlertReady: false };
 		}
 
-		// Parse and normalize alerts from GeoJSON features
+		// Parse and normalize alerts from ECCC GeoJSON properties
 		const alerts = response.features
 			.map((feature) => {
 				const props = feature.properties || {};
+				const severity = getSeverityValue(props);
 				return {
-					id: feature.id || props.identifier || '',
-					headline: props.headline || props.titre || '',
-					description: props.description || '',
-					event: props.event || props.evenement || '',
-					severity: props.severity || props.severite || 'Unknown',
-					urgency: props.urgency || props.urgence || 'Unknown',
-					certainty: props.certainty || props.certitude || 'Unknown',
-					effective: props.effective || props.effective_dt || '',
-					expires: props.expires || props.expires_dt || '',
-					sent: props.sent || '',
-					sender: props.sender || 'Environnement Canada',
-					status: props.status || '',
-					msgType: props.msg_type || props.msgType || '',
-					references: props.references || '',
-					area: props.area || props.zone || '',
-					instruction: props.instruction || '',
+					id: feature.id || props.id || '',
+					headline: props.alert_name_fr || props.alert_name_en || '',
+					description: props.alert_text_fr || props.alert_text_en || '',
+					event: props.alert_name_fr || props.alert_name_en || '',
+					severity: severity,
+					urgency: props.alert_type === 'warning' ? 'immediate' : 'expected',
+					certainty: props.confidence_fr || 'Observed',
+					effective: props.publication_datetime || '',
+					expires: props.expiration_datetime || '',
+					sent: props.publication_datetime || '',
+					sender: 'Environnement Canada',
+					status: props.status_fr || '',
+					msgType: props.alert_type || '',
+					references: '',
+					area: props.feature_name_fr || props.feature_name_en || '',
+					instruction: '',
 					// Computed fields
-					severityRank: SEVERITY_RANK[(props.severity || '').toLowerCase()] || 0,
-					urgencyRank: URGENCY_RANK[(props.urgency || '').toLowerCase()] || 0,
-					severityColor: getSeverityColor(props.severity),
+					severityRank: SEVERITY_RANK[severity] || 0,
+					urgencyRank: props.alert_type === 'warning' ? 4 : 2,
+					severityColor: getSeverityColor(severity),
 					isAlertReady: isAlertReady(props),
-					url: props.url || '',
+					url: `https://meteo.gc.ca/warnings/report_f.html?id=${props.alert_code || ''}`,
 				};
 			})
 			// Filter out expired alerts

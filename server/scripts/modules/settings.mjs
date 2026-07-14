@@ -15,7 +15,7 @@ const settings = {
 	pressureUnits: { value: 1 },
 	hoursFormat: { value: 2 },
 	speed: { value: 1.0 },
-	experimentalFeatures: { value: false },
+	experimentalFeatures: { value: true },
 	hideWebamp: { value: false },
 	kiosk: { value: false },
 	scanLines: { value: false },
@@ -71,7 +71,7 @@ const init = () => {
 		'experimentalFeatures',
 		'Experimental Features <a href="https://github.com/mwood77/ws4kp-international?tab=readme-ov-file#updates-in-1100" target="_blank" rel="noopener noreferrer">(info)</a>',
 		'checkbox',
-		false,
+		true,
 		experimentalFeaturesChange,
 		true,
 	);

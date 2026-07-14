@@ -41,14 +41,11 @@ export default class RadarBoundsCities {
 
 		const defaultHeaders = new Headers({
 			Accept: 'application/json',
-			'User-Agent': 'ws4kp-international/1.0 (https://mwood77.github.io/ws4kp-international)',
-			Origin: 'https://mwood77.github.io',
-			'Access-Control-Allow-Origin': '*',
-			'x-ws4kp': await createToken(),
+			'User-Agent': 'ws4kp-quebec/1.0 (https://github.com/mwood77/ws4kp-international)',
 		});
 
-		const corsAnywhere = corsAnywhereKnownSources[Math.floor(Math.random() * corsAnywhereKnownSources.length)];
-		return fetch(corsAnywhere + RadarBoundsCities.internalConstructBoundingBoxQuery(cornerWestLat, cornerWestLng, cornerEastLat, cornerEastLng), { headers: defaultHeaders })
+		const url = RadarBoundsCities.internalConstructBoundingBoxQuery(cornerWestLat, cornerWestLng, cornerEastLat, cornerEastLng) + '&format=json';
+		return fetch(url, { headers: defaultHeaders })
 			.then((res) => res.json())
 			.then((sparqlData) => {
 				const results = sparqlData.results && sparqlData.results.bindings;
