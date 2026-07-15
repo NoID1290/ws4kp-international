@@ -1,14 +1,15 @@
 {
   "enabled": true,
-  "url": "http://localhost:WS4KP_PORT/?latLonQuery=Montreal&latLon=%7B%22lat%22%3A45.5017%2C%22lon%22%3A-73.5673%7D&kiosk=true",
-  "fps": 15,
+  "url": "http://localhost:WS4KP_PORT/?latLonQuery=Montreal&latLon=%7B%22lat%22%3A45.5017%2C%22lon%22%3A-73.5673%7D&kiosk=true&settings-hideWebamp-checkbox=true&settings-wide-checkbox=true",
+  "fps": 30,
   "width": 1280,
   "height": 720,
   "audioEnabled": true,
-  "ffmpegVideoCodec": "nvenc",
-  "ffmpegPreset": "ultrafast",
+  "ffmpegAudioSource": "anullsrc",
+  "ffmpegVideoCodec": "h264_nvenc, libx264",
+  "ffmpegPreset": "fast",
   "ffmpegPath": "ffmpeg",
-  "jpegQuality": 40,
+  "jpegQuality": 80,
   "hlsSegmentDuration": 2,
   "hlsListSize": 10
 }

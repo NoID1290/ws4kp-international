@@ -28,9 +28,9 @@ const writeToFfmpegStdin = (process, buffer) => new Promise((resolve) => {
 	}
 });
 
-	const checkFfmpegEncoder = (codec, ffmpegPath) => {
-		return new Promise((resolve) => {
-			const proc = spawn(ffmpegPath, ['-encoders']);
+const checkFfmpegEncoder = (codec, ffmpegPath) => {
+	return new Promise((resolve) => {
+		const proc = spawn(ffmpegPath, ['-encoders']);
 		let output = '';
 		proc.stdout.on('data', (data) => { output += data.toString(); });
 		proc.on('close', () => {
@@ -49,12 +49,13 @@ export async function startStreamer(port) {
 		width: 640,
 		height: 480,
 		audioEnabled: true,
-		ffmpegVideoCodec: 'libx264',
+		ffmpegVideoCodec: 'h264_nvenc',
 		ffmpegPreset: 'veryfast',
 		ffmpegPath: 'ffmpeg',
 		jpegQuality: 80,
 		hlsSegmentDuration: 2,
 		hlsListSize: 5,
+		ffmpegAudioSource: 'anullsrc',
 	};
 
 	// Read stream.json config if it exists
@@ -77,13 +78,23 @@ export async function startStreamer(port) {
 	config.ffmpegVideoCodec = process.env.STREAM_FFMPEG_VIDEO_CODEC ?? config.ffmpegVideoCodec;
 	config.ffmpegPreset = process.env.STREAM_FFMPEG_PRESET ?? config.ffmpegPreset;
 	config.ffmpegPath = process.env.STREAM_FFMPEG_PATH ?? config.ffmpegPath;
-	config.ffmpegVideoCodec = config.ffmpegVideoCodec.split(',')[0].trim();
-
-	const encoderAvailable = await checkFfmpegEncoder(config.ffmpegVideoCodec, config.ffmpegPath);
-	if (!encoderAvailable) {
-		console.log(`Encoder '${config.ffmpegVideoCodec}' not available in FFmpeg build, falling back to libx264.`);
-		config.ffmpegVideoCodec = 'libx264';
+	config.ffmpegAudioSource = process.env.STREAM_FFMPEG_AUDIO_SOURCE ?? config.ffmpegAudioSource;
+	const codecs = config.ffmpegVideoCodec.split(',').map((c) => c.trim()).filter(Boolean);
+	let selectedCodec = null;
+	for (const codec of codecs) {
+		const encoderAvailable = await checkFfmpegEncoder(codec, config.ffmpegPath);
+		if (encoderAvailable) {
+			selectedCodec = codec;
+			break;
+		} else {
+			console.log(`Encoder '${codec}' not available in FFmpeg build.`);
+		}
 	}
+	if (!selectedCodec) {
+		console.log('No configured encoders available, falling back to libx264.');
+		selectedCodec = 'libx264';
+	}
+	config.ffmpegVideoCodec = selectedCodec;
 
 	if (!config.enabled) {
 		console.log('Background streamer is disabled in configuration.');
@@ -115,18 +126,25 @@ export async function startStreamer(port) {
 			fs.mkdirSync(hlsOutputDir, { recursive: true });
 		}
 
+		const puppeteerArgs = [
+			'--no-sandbox',
+			'--disable-setuid-sandbox',
+			'--disable-dev-shm-usage',
+			'--disable-gpu',
+			'--hide-scrollbars',
+			'--font-render-hinting=none',
+			'--disable-background-timer-throttling',
+			'--disable-backgrounding-occluded-windows',
+			'--disable-renderer-backgrounding',
+		];
+		if (!config.ffmpegAudioSource || !config.ffmpegAudioSource.startsWith('audio=')) {
+			puppeteerArgs.push('--mute-audio');
+		}
+
 		// Launch headless browser
 		browser = await puppeteer.launch({
 			headless: true,
-			args: [
-				'--no-sandbox',
-				'--disable-setuid-sandbox',
-				'--disable-dev-shm-usage',
-				'--disable-gpu',
-				'--hide-scrollbars',
-				'--mute-audio',
-				'--font-render-hinting=none',
-			],
+			args: puppeteerArgs,
 			executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
 		});
 
@@ -151,14 +169,53 @@ export async function startStreamer(port) {
 		];
 
 		if (config.audioEnabled) {
-			ffmpegArgs.push(
-				'-f',
-				'lavfi',
-				'-i',
-				'anullsrc=channel_layout=stereo:sample_rate=44100',
-				'-c:a',
-				'aac',
-			);
+			const isNullSource = !config.ffmpegAudioSource || config.ffmpegAudioSource === 'anullsrc';
+			if (isNullSource) {
+				ffmpegArgs.push(
+					'-f',
+					'lavfi',
+					'-i',
+					'anullsrc=channel_layout=stereo:sample_rate=44100',
+					'-c:a',
+					'aac',
+				);
+			} else if (config.ffmpegAudioSource.startsWith('audio=')) {
+				// Hardware system audio loopback capture
+				ffmpegArgs.push(
+					'-f', 'dshow',
+					'-i', config.ffmpegAudioSource,
+					'-c:a', 'aac',
+					'-map', '0:v',
+					'-map', '1:a',
+				);
+			} else {
+				// Local file or remote audio stream URL
+				const isUrl = config.ffmpegAudioSource.startsWith('http://') || config.ffmpegAudioSource.startsWith('https://');
+				if (!isUrl) {
+					ffmpegArgs.push('-stream_loop', '-1');
+				}
+				ffmpegArgs.push(
+					'-i', config.ffmpegAudioSource,
+					'-c:a', 'aac',
+					'-map', '0:v',
+					'-map', '1:a',
+				);
+			}
+		}
+
+		let mappedPreset = config.ffmpegPreset;
+		if (config.ffmpegVideoCodec.includes('nvenc')) {
+			if (['ultrafast', 'superfast', 'veryfast'].includes(mappedPreset)) {
+				mappedPreset = 'p1';
+			} else if (mappedPreset === 'fast') {
+				mappedPreset = 'p2';
+			} else if (mappedPreset === 'medium') {
+				mappedPreset = 'p4';
+			} else if (['slow', 'slower', 'veryslow'].includes(mappedPreset)) {
+				mappedPreset = 'p7';
+			} else {
+				mappedPreset = 'p4';
+			}
 		}
 
 		ffmpegArgs.push(
@@ -167,7 +224,7 @@ export async function startStreamer(port) {
 			'-pix_fmt',
 			'yuv420p',
 			'-preset',
-			config.ffmpegPreset,
+			mappedPreset,
 		);
 
 		if (config.ffmpegVideoCodec.startsWith('libx264')) {
@@ -177,12 +234,16 @@ export async function startStreamer(port) {
 		ffmpegArgs.push(
 			'-g',
 			String(config.fps * 2),
+			'-keyint_min',
+			String(config.fps * 2),
+			'-sc_threshold',
+			'0',
 			'-hls_time',
 			String(config.hlsSegmentDuration),
 			'-hls_list_size',
 			String(config.hlsListSize),
 			'-hls_flags',
-			'delete_segments',
+			'delete_segments+temp_file',
 			path.join(hlsOutputDir, 'index.m3u8'),
 		);
 
@@ -202,31 +263,38 @@ export async function startStreamer(port) {
 			}
 		});
 
-		// Start screenshot piping loop
-		const interval = 1000 / config.fps;
-		const captureLoop = async () => {
-			if (!running) return;
-			const startTime = Date.now();
+		// Start CDP screencast session
+		const client = await page.createCDPSession();
+		client.on('Page.screencastFrame', async ({ data, sessionId }) => {
+			if (!running) {
+				try {
+					await client.send('Page.screencastFrameAck', { sessionId });
+				} catch (e) {}
+				return;
+			}
 
 			try {
-				const buffer = await page.screenshot({
-					type: 'jpeg',
-					quality: config.jpegQuality,
-				});
-
+				const buffer = Buffer.from(data, 'base64');
 				if (ffmpegProcess && ffmpegProcess.stdin.writable) {
 					await writeToFfmpegStdin(ffmpegProcess, buffer);
 				}
 			} catch (err) {
-				console.error('Screenshot capture failed:', err.message);
+				console.error('CDP Screencast frame processing failed:', err.message);
+			} finally {
+				try {
+					await client.send('Page.screencastFrameAck', { sessionId });
+				} catch (e) {}
 			}
+		});
 
-			const elapsed = Date.now() - startTime;
-			const delay = Math.max(1, interval - elapsed);
-			captureTimeout = setTimeout(captureLoop, delay);
-		};
+		await client.send('Page.startScreencast', {
+			format: 'jpeg',
+			quality: config.jpegQuality,
+			maxWidth: config.width,
+			maxHeight: config.height,
+			everyNthFrame: 1,
+		});
 
-		captureLoop();
 		console.log('Background streamer running and encoding to HLS.');
 	} catch (err) {
 		console.error('Failed to initialize background streamer:', err);
